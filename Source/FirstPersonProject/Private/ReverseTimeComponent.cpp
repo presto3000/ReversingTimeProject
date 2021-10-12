@@ -56,6 +56,10 @@ void UReverseTimeComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 	if(!bReversingTime) //storing data
 	{
+		RunningTime = 0.f;
+		LeftReverseRunningTime = 0.f;
+		RightReverseRunningTime = 0.f;
+		
 		AActor* Owner = GetOwner();
 		//Geting a ref to a blueprint type 
 		TInlineComponentArray<UStaticMeshComponent*> StaticMeshComponents;
@@ -66,7 +70,7 @@ void UReverseTimeComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 			if(SMC)
 			{
 				FFramePackage Package(Owner->GetActorLocation(), Owner->GetActorRotation(), SMC->GetPhysicsLinearVelocity(),
-					SMC->GetPhysicsAngularVelocityInDegrees(), DeltaTime);
+										SMC->GetPhysicsAngularVelocityInDegrees(), DeltaTime);
 
 				if(RecordedTime < 15.0f)
 				{
@@ -94,38 +98,64 @@ void UReverseTimeComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 	else if(!bOutOfData) //reversing time
 	{
-		auto Tail = StoredFrames.GetTail();
-		if(Tail)
+		RunningTime += DeltaTime * .2f;
+		auto Right = StoredFrames.GetTail();
+		auto Left = Right->GetPrevNode();
+		LeftReverseRunningTime = RightReverseRunningTime + Right->GetValue().DeltaTime;
+		while(RunningTime > LeftReverseRunningTime)
 		{
-			AActor* Owner = GetOwner();
-			Owner->SetActorLocation(Tail->GetValue().Location);
-			Owner->SetActorRotation(Tail->GetValue().Rotation);
-			
-			TInlineComponentArray<UStaticMeshComponent*> StaticMeshComponents;
-			Owner->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
-			
-			if(StaticMeshComponents.Num() > 0)
+			RightReverseRunningTime += Right->GetValue().DeltaTime;
+			Right = Left;
+			LeftReverseRunningTime += Left->GetValue().DeltaTime;
+			Left = Left->GetPrevNode();
+
+			auto Tail = StoredFrames.GetTail();
+			RecordedTime -= Tail->GetValue().DeltaTime;
+			StoredFrames.RemoveNode(Tail);
+			if(Left == StoredFrames.GetHead())
 			{
-				UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(StaticMeshComponents[0]);
-				if(SMC)
-				{
-					SMC->SetPhysicsLinearVelocity(Tail->GetValue().LinearVelocity);
-					SMC->SetPhysicsAngularVelocityInDegrees(Tail->GetValue().AngularVelocity);
-					
-				}
-			}
-			auto Head = StoredFrames.GetHead();
-			if(Head == Tail)
-			{
-				RecordedTime = 0.f;
 				bOutOfData = true;
 			}
-			else
-			{
-				RecordedTime -= Tail->GetValue().DeltaTime;
-			}
-			StoredFrames.RemoveNode(Tail);
+	
+		}
+		// now Left and Right surround RunningTime
+		if(RunningTime <= LeftReverseRunningTime && RunningTime >= RightReverseRunningTime)
+		{
+			float DT = RunningTime - RightReverseRunningTime;
+			float Interval = LeftReverseRunningTime - RightReverseRunningTime;
+			float Fraction = DT / Interval;
+
+			FVector InterpLoc = FMath::VInterpTo(Right->GetValue().Location, Left->GetValue().Location, Fraction, 1.0f);
+			FRotator InterpRot = FMath::RInterpTo(Right->GetValue().Rotation, Left->GetValue().Rotation, Fraction, 1.0f);
+			FVector InterpLinVel = FMath::VInterpTo(Right->GetValue().LinearVelocity, Left->GetValue().LinearVelocity, Fraction, 1.0f);
+			FVector InterpAngVel = FMath::VInterpTo(Right->GetValue().AngularVelocity, Left->GetValue().AngularVelocity, Fraction, 1.0f);
+
+			SetActorVariables(InterpLoc, InterpRot, InterpLinVel, InterpAngVel);
 		}
 	}
+}
+
+void UReverseTimeComponent::SetActorVariables(FVector Location, FRotator Rotation,
+	FVector LinearVel, FVector AngularVel)
+{
+
+		AActor* Owner = GetOwner();
+		Owner->SetActorLocation(Location);
+		Owner->SetActorRotation(Rotation);
+			
+		TInlineComponentArray<UStaticMeshComponent*> StaticMeshComponents;
+		Owner->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
+			
+		if(StaticMeshComponents.Num() > 0)
+		{
+			UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(StaticMeshComponents[0]);
+			if(SMC)
+			{
+				SMC->SetPhysicsLinearVelocity(LinearVel);
+				SMC->SetPhysicsAngularVelocityInDegrees(AngularVel);
+					
+			}
+		}
+	
 }
 

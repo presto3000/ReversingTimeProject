@@ -36,11 +36,15 @@ public:
 	// Actual time since we started reversing time
 	float RunningTime;
 	// Running count of the Frame Package Delta Times
-	float ReverseRunningTime;
+	float LeftReverseRunningTime;
+	float RightReverseRunningTime;
 	// Total amount of time recorded in FramePackage
 	float RecordedTime;
 
 	// Double LinkList Container
 	TDoubleLinkedList<FFramePackage>StoredFrames;
+
+	void SetActorVariables(FVector Location, FRotator Rotation, FVector LinearVel, FVector AngularVel);
+	
 	
 };
